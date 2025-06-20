@@ -1,7 +1,7 @@
 from .dataclasses import Disciplina, Unidade, Curso
 from shutil import which
 from bs4 import BeautifulSoup
-from selenium import webdriver
+from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -10,75 +10,83 @@ import time
 
 
 class Scrapper:
+    URL: str = "https://uspdigital.usp.br/jupiterweb/jupCarreira.jsp?codmnu=8275"
     unidades_dict: dict[str, Unidade]
     # disciplinas_dict: dict[str, Disciplina]
 
     def __init__(self, max: int) -> None:
-        self.unidades_dict = self._fetch_units(max)
-
-    def _fetch_units(self, max: int) -> dict[str, Unidade]:
-        """
-        Fetch all unit options by clicking the dropdown and waiting for dynamic content.
-        """
         service = Service(executable_path=which("chromedriver"))
 
-        with webdriver.Chrome(service=service) as driver:
-            driver.get(
-                "https://uspdigital.usp.br/jupiterweb/jupCarreira.jsp?codmnu=8275"
+        with Chrome(service=service) as driver:
+            driver.get(self.URL)
+            self.unidades_dict = self._init_unidades(max, driver)
+            for unidade in self.unidades_dict.values():
+                unidade.cursos = self._fetch_cursos(unidade.nome, driver)
+
+    @staticmethod
+    def _init_unidades(max: int, driver: Chrome) -> dict[str, Unidade]:
+        # Wait for the dropdown to be clickable and click it
+        unidades_dropdown = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "comboUnidade"))
+        )
+        unidades_dropdown.click()
+
+        # Wait for the options to be present in the dropdown
+        _ = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "select#comboUnidade option")
             )
+        )
 
-            # Wait for the dropdown to be clickable and click it
-            unidades_dropdown = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.ID, "comboUnidade"))
+        # Parse the page with BeautifulSoup
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+
+        # Extract options
+        unidades_options = soup.find("select", id="comboUnidade")
+        if not unidades_options:
+            raise ValueError("Dropdown para Unidades não foi encontrado")
+
+        unidades_dict: dict[str, Unidade] = {}
+        count = 0
+        for option in unidades_options.find_all("option"):
+            if count == max:
+                return unidades_dict
+            if text := option.text.strip():
+                nome, sigla = text.split(" - ( ", 1)
+                sigla = sigla.rstrip(" )")
+                unidades_dict[sigla] = Unidade(nome=nome, sigla=sigla)
+                count += 1
+        return unidades_dict
+
+    @staticmethod
+    def _fetch_cursos(unidade_nome: str, driver: Chrome) -> dict[str, Curso]:
+        # Select the unit in the dropdown
+        unidade_dropdown = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "comboUnidade"))
+        )
+        unidade_dropdown.send_keys(unidade_nome)
+
+        # Wait for the course dropdown options to be present
+        _ = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "select#comboCurso option")
             )
-            unidades_dropdown.click()
+        )
 
-            # Wait for options to load (adjust delay as needed)
-            time.sleep(0.5)  # Quick fix; prefer WebDriverWait in production
+        # Parse the course dropdown
+        curso_dropdown = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "comboCurso"))
+        )
+        curso_dropdown.click()
+        time.sleep(0.05)
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        curso_options = soup.find("select", id="comboCurso")
 
-            # Parse the page with BeautifulSoup
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-
-            # Extract options
-            unidades_options = soup.find("select", id="comboUnidade")
-            if not unidades_options:
-                raise ValueError("Dropdown para Unidades não foi encontrado")
-
-            unidades_dict: dict[str, Unidade] = {}
-            count = 0
-            for option in unidades_options.find_all("option"):
-                if count == max:
-                    break
-                if text := option.text.strip():
-                    nome, sigla = text.split(" - ( ", 1)
-                    sigla = sigla.rstrip(" )")
-                    unidades_dict[sigla] = Unidade(nome=nome, sigla=sigla)
-                    count += 1
-
-            # Now fetch courses for each unit
-            for sigla, unidade in unidades_dict.items():
-                # Select the unit in the dropdown
-                unidade_dropdown = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "comboUnidade"))
-                )
-                unidade_dropdown.send_keys(unidade.nome)
-
-                # Wait for the course dropdown to populate
-                time.sleep(0.5)  # Quick fix; prefer WebDriverWait in production
-
-                # Parse the course dropdown
-                curso_dropdown = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "comboCurso"))
-                )
-                curso_dropdown.click()
-                time.sleep(0.5)
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-                course_options = soup.find("select", id="comboCurso")
-
-                if not course_options:
-                    raise ValueError("Dropdown para Cursos não foi encontrado")
-                for course_option in course_options.find_all("option"):
-                    if course_text := course_option.text.strip():
-                        nome, periodo = course_text.split(" - ", 1)
-                        unidade.cursos[nome] = Curso(nome=nome, periodo=periodo)
-            return unidades_dict
+        cursos_dict: dict[str, Curso] = {}
+        if not curso_options:
+            raise ValueError("Dropdown para Cursos não foi encontrado")
+        for option in curso_options.find_all("option"):
+            if text := option.text.strip():
+                nome, periodo = text.split(" - ", 1)
+                cursos_dict[nome] = Curso(nome=nome, periodo=periodo)
+        return cursos_dict
