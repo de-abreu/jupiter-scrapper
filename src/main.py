@@ -13,30 +13,8 @@ def main():
             f"Foram encontrados no comando os seguintes argumentos estranhos, remova-os e tente novamente: {sys.argv[2:]}"
         )
 
-    print(s.unidades_dict)
-
-    # s.menu()
-    # while True:
-    #     menu = """
-    #     Busque informações no sistema Jupiter. Opções:
-    #     1. Listar unidades disponíveis
-    #     2. Listar cursos disponíveis
-    #     3. Buscar curso
-    #     4. Buscar disciplina
-    #     5. Buscar disciplinas comuns a mais de um curso
-    #     6. Sair
-    #     Selecione [1-5]:
-    #     """
-    #     print(menu)
-    #     match int(input()):
-    #         case 1:
-    #         case 2:
-    #         case 3:
-    #         case 4:
-    #         case 5:
-    #             break
-    #         case _:
-    #             raise ValueError("Somente valores de 1 à 4 são aceitos")
+    # print(s.unidades_dict)
+    s.menu()
 
 
 if __name__ == "__main__":

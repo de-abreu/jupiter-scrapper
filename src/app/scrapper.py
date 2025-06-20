@@ -192,3 +192,30 @@ class Scrapper:
                 )
             local_disciplinas_dict[codigo] = disciplina
         return local_disciplinas_dict
+
+    def menu(self) -> None:
+        prompt = """
+        Busque informações no sistema Jupiter. Opções:
+        1. Listar unidades disponíveis
+        2. Listar cursos disponíveis
+        3. Buscar curso
+        4. Buscar disciplina
+        5. Buscar disciplinas comuns a mais de um curso
+        6. Sair
+        Selecione [1-5]:
+        """
+        while True:
+            print(prompt)
+            match int(input()):
+                case 1:
+                    self._listar_unidades()
+                case 2:
+                    self._listar_cursos()
+                case 3:
+                    self._buscar_disciplina()
+                case 4:
+                    self._listar_disciplinas_comuns()
+                case 5:
+                    return
+                case _:
+                    raise ValueError("Somente valores de 1 à 5 são aceitos")
