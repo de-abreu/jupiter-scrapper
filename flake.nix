@@ -15,6 +15,7 @@
       with ps; [
         beautifulsoup4
         selenium
+        tabulate
         types-beautifulsoup4
       ]);
     chromeDeps = with pkgs; [chromium chromedriver];
