@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 class Disciplina:
     nome: str
     codigo: str
-    cursos: list[str]
+    cursos: set[str]
     creditos_aula: int = 0
     creditos_trabalho: int = 0
     carga_horaria: int = 0
