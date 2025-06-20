@@ -1,2 +1,5 @@
 # jupiter-scrapper
-A scrapper to query data of the graduation courses offered by the University of São Paulo from its Jupiter system
+
+Um web scrapper para buscar ou listar informações sobre cursos oferecidos pela
+Universidade de São Paulo (USP) por meio do sistema online
+[Jupiter](https://uspdigital.usp.br/jupiterweb/jupCarreira.jsp?codmnu=8275)

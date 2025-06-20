@@ -10,17 +10,19 @@
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
 
-    # Custom Python environment with dependencies
+    # Custom Python environment
     pythonEnv = pkgs.python3.withPackages (ps:
       with ps; [
         beautifulsoup4
         selenium
         types-beautifulsoup4
       ]);
+    chromeDeps = with pkgs; [chromium chromedriver];
+    dependencies = [pythonEnv] ++ chromeDeps;
   in {
     # For `nix develop`
     devShells.${system}.default = pkgs.mkShell {
-      buildInputs = [pythonEnv];
+      buildInputs = dependencies;
       shellHook = ''
         echo "🚀 Welcome to the Jupiter Scrapper dev environment!"
       '';
