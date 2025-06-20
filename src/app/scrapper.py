@@ -1,14 +1,16 @@
-from bs4.element import Tag
-from .dataclasses import Disciplina, Unidade, Curso
+import time
 from shutil import which
+
 from bs4 import BeautifulSoup
-from tabulate import tabulate
+from bs4.element import Tag
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
+from selenium.webdriver.support.ui import WebDriverWait
+from tabulate import tabulate
+
+from .dataclasses import Curso, Disciplina, Unidade
 
 
 class Scrapper:
@@ -16,6 +18,7 @@ class Scrapper:
     driver: Chrome
     unidades_dict: dict[str, Unidade]
     disciplinas_dict: dict[str, Disciplina]
+    table_style: str = "rounded_outline"
 
     def __init__(self, max: int) -> None:
         service = Service(executable_path=which("chromedriver"))
@@ -204,20 +207,37 @@ class Scrapper:
         return local_disciplinas_dict
 
     def _listar_dados_curso(self, curso: Curso) -> None:
-        print(f"Curso: {curso.nome} ({curso.periodo})")
-        print(f"Duração ideal: {curso.duracao_ideal} semestres")
-        print(f"Duração máxima: {curso.duracao_max} semestres")
+        table = [
+            ["Nome", "Período", "Duração Ideal", "Duração Máxima"],
+            [
+                curso.nome,
+                curso.periodo,
+                f"{curso.duracao_ideal} semestres",
+                f"{curso.duracao_max} semestres",
+            ],
+        ]
+        print("\n" + tabulate(table, headers="firstrow", tablefmt=self.table_style))
+
         print("\nDisciplinas obrigatórias:")
+
+        table = [["Nome da Disciplina", "Código"]]
         for disciplina in curso.obrigatorias.values():
-            print(f"- {disciplina.nome} ({disciplina.codigo})")
+            table.append([disciplina.nome, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
 
         print("\nDisciplinas optativas livres:")
+
+        table = [["Nome da Disciplina", "Código"]]
         for disciplina in curso.optativas_livres.values():
-            print(f"- {disciplina.nome} ({disciplina.codigo})")
+            table.append([disciplina.nome, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
 
         print("\nDisciplinas optativas eletivas:")
+
+        table = [["Nome da Disciplina", "Código"]]
         for disciplina in curso.optativas_eletivas.values():
-            print(f"- {disciplina.nome} ({disciplina.codigo})")
+            table.append([disciplina.nome, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
 
     def _listar_cursos_unidade(self, unidade: Unidade) -> None:
         print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
@@ -227,11 +247,12 @@ class Scrapper:
             counter += 1
             table.append([str(counter), curso.nome, curso.periodo])
 
-        print(tabulate(table, headers="firstrow", tablefmt="grid"))
+        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
 
         while True:
-            prompt = "\nDigite o número do curso para listar as informações ou 'sair' para voltar ao menu: "
-            escolha = input(prompt).strip().upper()
+            prompt = "Digite o número do curso para listar as informações ou 'sair' para voltar ao menu:"
+            print("\n" + prompt)
+            escolha = input("> ").strip().upper()
             if escolha == "SAIR":
                 return
             else:
@@ -248,12 +269,13 @@ class Scrapper:
         for unidade in self.unidades_dict.values():
             table.append([unidade.sigla, unidade.nome])
 
-        print(tabulate(table, headers="firstrow", tablefmt="grid"))
+        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
 
-        prompt = "\nPara buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu: "
+        prompt = "Para buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu:"
 
         while True:
-            sigla = input(prompt).strip().upper()
+            print("\n" + prompt)
+            sigla = input("> ").strip().upper()
             if sigla == "SAIR":
                 return
             if sigla in self.unidades_dict:
@@ -263,27 +285,28 @@ class Scrapper:
                 print("Sigla inválida, tente novamente.")
 
     def menu(self) -> None:
-        prompt = """
-        Busque informações no sistema Jupiter. Opções:
-        1. Listar unidades disponíveis
-        2. Listar cursos disponíveis
-        3. Buscar disciplina
-        4. Buscar disciplinas comuns a mais de um curso
-        5. Sair
-        Selecione [1-5]:
-        """
+        prompt = "Busque informações no sistema Jupiter, ou digite 'sair' para fechar o programa:"
+
+        table = [
+            ["Opção", "Descrição"],
+            ["1", "Listar unidades disponíveis"],
+            ["2", "Listar cursos disponíveis"],
+            ["3", "Buscar disciplina específica"],
+            ["4", "Buscar disciplinas comuns a mais de um curso"],
+        ]
         while True:
-            print(prompt)
-            match int(input()):
-                case 1:
+            print("\n" + prompt)
+            print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+            match input("> ").strip().upper():
+                case "1":
                     self._listar_unidades()
-                case 2:
+                case "2":
                     self._listar_cursos()
-                case 3:
+                case "3":
                     self._buscar_disciplina()
-                case 4:
+                case "4":
                     self._listar_disciplinas_comuns()
-                case 5:
+                case "SAIR":
                     return
                 case _:
-                    raise ValueError("Somente valores de 1 à 5 são aceitos")
+                    raise ValueError("Valor inválido, tente novamente.")
