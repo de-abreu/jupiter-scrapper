@@ -1,7 +1,4 @@
 from dataclasses import dataclass, field
-from enum import Enum
-
-Periodo = Enum("Período", ["matutino", "vespertino", "noturno", "integral"])
 
 
 @dataclass
@@ -20,7 +17,7 @@ class Disciplina:
 @dataclass
 class Curso:
     nome: str
-    periodo: Periodo
+    periodo: str
     duracao_ideal: int | None = None  # Dada em semestres
     duracao_max: int | None = None  # Dada em semestres
     obrigatorias: dict[str, Disciplina] = field(default_factory=dict)
