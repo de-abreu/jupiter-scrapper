@@ -1,3 +1,4 @@
+from bs4.element import Tag
 from .dataclasses import Disciplina, Unidade, Curso
 from shutil import which
 from bs4 import BeautifulSoup
@@ -107,11 +108,21 @@ class Scrapper:
         )
         buscar_button.click()
 
-        # Wait for "Grade Curricular" tab to be selectable and click it
+        # Wait for the overlay to disappear
+        _ = WebDriverWait(self.driver, 10).until(
+            EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
+            )
+        )
+        # Now click the "Grade Curricular" tab
         grade_tab = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
         )
         grade_tab.click()
+
+        _ = WebDriverWait(self.driver, 10).until(
+            EC.visibility_of_element_located((By.ID, "gradeCurricular"))
+        )
 
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
 
@@ -126,8 +137,58 @@ class Scrapper:
         else:
             raise ValueError("Span 'durmaxhab' não encontrado")
 
+        grade_curricular_div = soup.find("div", id="gradeCurricular")
+        tables = grade_curricular_div.find_all("table")
+
+        try:
+            curso.obrigatorias = self._populate_disciplinas(curso.nome, tables[0])
+            curso.optativas_livres = self._populate_disciplinas(curso.nome, tables[1])
+            curso.optativas_eletivas = self._populate_disciplinas(curso.nome, tables[2])
+        except IndexError:
+            pass
+
         # Click the "Buscar" button again to reset the page
         buscar_button = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
         )
         buscar_button.click()
+
+    def _populate_disciplinas(
+        self, curso_nome: str, table: Tag
+    ) -> dict[str, Disciplina]:
+        local_disciplinas_dict: dict[str, Disciplina] = {}
+
+        def fetch_cell(cells: Tag, index: int) -> int:
+            value = cells[index].text.strip()
+            return int(value) if value else 0
+
+        for tr in table.find_all("tr"):
+            if tr.get("style") != "height: 20px;":
+                continue
+
+            tds = tr.find_all("td")
+            if not tds:
+                continue
+
+            codigo = tds[0].text.strip()
+            if not codigo:
+                continue
+
+            # Check if Disciplina exists in disciplinas_dict
+            disciplina = self.disciplinas_dict.get(codigo)
+            if disciplina:
+                disciplina.cursos.add(curso_nome)
+            else:
+                self.disciplinas_dict[codigo] = disciplina = Disciplina(
+                    codigo=codigo,
+                    nome=tds[1].text.strip() if len(tds) > 1 else "",
+                    creditos_aula=fetch_cell(tds, 2),
+                    creditos_trabalho=fetch_cell(tds, 3),
+                    carga_horaria=fetch_cell(tds, 4),
+                    horas_estagio=fetch_cell(tds, 5),
+                    horas_pcc=fetch_cell(tds, 6),
+                    atividades_tpa=fetch_cell(tds, 7),
+                    cursos={curso_nome},
+                )
+            local_disciplinas_dict[codigo] = disciplina
+        return local_disciplinas_dict

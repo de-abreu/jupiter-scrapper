@@ -10,11 +10,12 @@ def main():
         s = Scrapper(int(sys.argv[1]))
     else:
         raise ValueError(
-            f"Argumentos estranhos, remova-os e tente novamente: {sys.argv[2:]}"
+            f"Foram encontrados no comando os seguintes argumentos estranhos, remova-os e tente novamente: {sys.argv[2:]}"
         )
 
     print(s.unidades_dict)
 
+    # s.menu()
     # while True:
     #     menu = """
     #     Busque informações no sistema Jupiter. Opções:
