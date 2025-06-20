@@ -27,6 +27,7 @@ class Scrapper:
             self.disciplinas_dict = {}
             for unidade in self.unidades_dict.values():
                 unidade.cursos = self._fetch_cursos(unidade.nome)
+                print(unidade.nome)
 
     def _init_unidades(self, max: int) -> dict[str, Unidade]:
         # Wait for the dropdown to be clickable and click it
@@ -93,6 +94,7 @@ class Scrapper:
                 nome, periodo = text.split(" - ", 1)
                 cursos_dict[nome] = Curso(nome=nome, periodo=periodo)
         for curso in cursos_dict.values():
+            print(curso.nome)
             self._populate_curso(curso)
         return cursos_dict
 
@@ -154,6 +156,13 @@ class Scrapper:
         )
         buscar_button.click()
 
+        # Wait for the overlay to disappear
+        _ = WebDriverWait(self.driver, 10).until(
+            EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
+            )
+        )
+
     def _populate_disciplinas(
         self, curso_nome: str, table: Tag
     ) -> dict[str, Disciplina]:
@@ -194,7 +203,6 @@ class Scrapper:
             local_disciplinas_dict[codigo] = disciplina
         return local_disciplinas_dict
 
-
     def _listar_dados_curso(self, curso: Curso) -> None:
         print(f"Curso: {curso.nome} ({curso.periodo})")
         print(f"Duração ideal: {curso.duracao_ideal} semestres")
@@ -210,7 +218,6 @@ class Scrapper:
         print("\nDisciplinas optativas eletivas:")
         for disciplina in curso.optativas_eletivas.values():
             print(f"- {disciplina.nome} ({disciplina.codigo})")
-        
 
     def _listar_cursos_unidade(self, unidade: Unidade) -> None:
         print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
@@ -219,14 +226,14 @@ class Scrapper:
         for curso in unidade.cursos.values():
             counter += 1
             table.append([str(counter), curso.nome, curso.periodo])
-        
+
         print(tabulate(table, headers="firstrow", tablefmt="grid"))
 
         while True:
             prompt = "\nDigite o número do curso para listar as informações ou 'sair' para voltar ao menu: "
             escolha = input(prompt).strip().upper()
             if escolha == "SAIR":
-                return 
+                return
             else:
                 escolha_numero = int(escolha)
                 if 1 <= escolha_numero <= counter:
@@ -235,13 +242,12 @@ class Scrapper:
                 else:
                     print("Número inválido, tente novamente.")
 
-
     def _listar_unidades(self) -> None:
         print("\nUnidades disponíveis:")
         table = [["Sigla", "Nome"]]
         for unidade in self.unidades_dict.values():
             table.append([unidade.sigla, unidade.nome])
-         
+
         print(tabulate(table, headers="firstrow", tablefmt="grid"))
 
         prompt = "\nPara buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu: "
