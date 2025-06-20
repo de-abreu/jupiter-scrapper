@@ -3,10 +3,13 @@ from app.scrapper import Scrapper
 
 
 def main():
+    prompt = "Espere enquanto nós coletamos as informações, isso pode levar alguns minutos..."
     s: Scrapper
     if len(sys.argv) == 1:
+        print(prompt)
         s = Scrapper(-1)
     elif len(sys.argv) == 2:
+        print(prompt)
         s = Scrapper(int(sys.argv[1]))
     else:
         raise ValueError(

@@ -2,6 +2,7 @@ from bs4.element import Tag
 from .dataclasses import Disciplina, Unidade, Curso
 from shutil import which
 from bs4 import BeautifulSoup
+from tabulate import tabulate
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -193,15 +194,76 @@ class Scrapper:
             local_disciplinas_dict[codigo] = disciplina
         return local_disciplinas_dict
 
+
+    def _listar_dados_curso(self, curso: Curso) -> None:
+        print(f"Curso: {curso.nome} ({curso.periodo})")
+        print(f"Duração ideal: {curso.duracao_ideal} semestres")
+        print(f"Duração máxima: {curso.duracao_max} semestres")
+        print("\nDisciplinas obrigatórias:")
+        for disciplina in curso.obrigatorias.values():
+            print(f"- {disciplina.nome} ({disciplina.codigo})")
+
+        print("\nDisciplinas optativas livres:")
+        for disciplina in curso.optativas_livres.values():
+            print(f"- {disciplina.nome} ({disciplina.codigo})")
+
+        print("\nDisciplinas optativas eletivas:")
+        for disciplina in curso.optativas_eletivas.values():
+            print(f"- {disciplina.nome} ({disciplina.codigo})")
+        
+
+    def _listar_cursos_unidade(self, unidade: Unidade) -> None:
+        print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
+        counter = 0
+        table = [["Número", "Nome do Curso", "Período"]]
+        for curso in unidade.cursos.values():
+            counter += 1
+            table.append([str(counter), curso.nome, curso.periodo])
+        
+        print(tabulate(table, headers="firstrow", tablefmt="grid"))
+
+        while True:
+            prompt = "\nDigite o número do curso para listar as informações ou 'sair' para voltar ao menu: "
+            escolha = input(prompt).strip().upper()
+            if escolha == "SAIR":
+                return 
+            else:
+                escolha_numero = int(escolha)
+                if 1 <= escolha_numero <= counter:
+                    curso = list(unidade.cursos.values())[escolha_numero - 1]
+                    self._listar_dados_curso(curso)
+                else:
+                    print("Número inválido, tente novamente.")
+
+
+    def _listar_unidades(self) -> None:
+        print("\nUnidades disponíveis:")
+        table = [["Sigla", "Nome"]]
+        for unidade in self.unidades_dict.values():
+            table.append([unidade.sigla, unidade.nome])
+         
+        print(tabulate(table, headers="firstrow", tablefmt="grid"))
+
+        prompt = "\nPara buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu: "
+
+        while True:
+            sigla = input(prompt).strip().upper()
+            if sigla == "SAIR":
+                return
+            if sigla in self.unidades_dict:
+                _unidade = self.unidades_dict[sigla]
+                self._listar_cursos_unidade(_unidade)
+            else:
+                print("Sigla inválida, tente novamente.")
+
     def menu(self) -> None:
         prompt = """
         Busque informações no sistema Jupiter. Opções:
         1. Listar unidades disponíveis
         2. Listar cursos disponíveis
-        3. Buscar curso
-        4. Buscar disciplina
-        5. Buscar disciplinas comuns a mais de um curso
-        6. Sair
+        3. Buscar disciplina
+        4. Buscar disciplinas comuns a mais de um curso
+        5. Sair
         Selecione [1-5]:
         """
         while True:
