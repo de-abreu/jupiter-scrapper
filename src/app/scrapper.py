@@ -1,14 +1,17 @@
-from bs4.element import Tag
-from .dataclasses import Disciplina, Unidade, Curso
+import time
 from shutil import which
+
 from bs4 import BeautifulSoup
-from tabulate import tabulate
+from bs4.element import Tag
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
+from selenium.webdriver.support.ui import WebDriverWait
+from tabulate import tabulate
+
+from .dataclasses import Curso, Disciplina, Unidade
 
 
 class Scrapper:
@@ -28,6 +31,13 @@ class Scrapper:
             for unidade in self.unidades_dict.values():
                 unidade.cursos = self._fetch_cursos(unidade.nome)
                 print(unidade.nome)
+
+    def _wait_overlay(self) -> None:
+        _ = WebDriverWait(self.driver, 10).until(
+            EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
+            )
+        )
 
     def _init_unidades(self, max: int) -> dict[str, Unidade]:
         # Wait for the dropdown to be clickable and click it
@@ -91,7 +101,7 @@ class Scrapper:
             raise ValueError("Dropdown para Cursos não foi encontrado")
         for option in curso_options.find_all("option"):
             if text := option.text.strip():
-                nome, periodo = text.split(" - ", 1)
+                nome, periodo = text.rsplit(" - ", 1)
                 cursos_dict[nome] = Curso(nome=nome, periodo=periodo)
         for curso in cursos_dict.values():
             print(curso.nome)
@@ -111,57 +121,64 @@ class Scrapper:
         )
         buscar_button.click()
 
-        # Wait for the overlay to disappear
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
-            )
-        )
+        self._wait_overlay()
+
         # Now click the "Grade Curricular" tab
-        grade_tab = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
-        )
-        grade_tab.click()
-
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.visibility_of_element_located((By.ID, "gradeCurricular"))
-        )
-
-        soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
-        duracao_ideal_span = soup.find("span", class_="duridlhab")
-        if duracao_ideal_span:
-            curso.duracao_ideal = int(duracao_ideal_span.text.strip())
-        else:
-            raise ValueError("Span 'duridlhab' não encontrado")
-        duracao_max_span = soup.find("span", class_="durmaxhab")
-        if duracao_max_span:
-            curso.duracao_max = int(duracao_max_span.text.strip())
-        else:
-            raise ValueError("Span 'durmaxhab' não encontrado")
-
-        grade_curricular_div = soup.find("div", id="gradeCurricular")
-        tables = grade_curricular_div.find_all("table")
-
         try:
-            curso.obrigatorias = self._populate_disciplinas(curso.nome, tables[0])
-            curso.optativas_livres = self._populate_disciplinas(curso.nome, tables[1])
-            curso.optativas_eletivas = self._populate_disciplinas(curso.nome, tables[2])
-        except IndexError:
+            grade_tab = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
+            )
+            grade_tab.click()
+        except Exception as _:
+            # If "Grade Curricular" tab is unavailable
+            print("Hey!")
+            close_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "div.ui-dialog-buttonset"))
+            )
+            close_button.click()
+            return
+
+        # If the tab is available, but contains no tables
+        try:
+            _ = WebDriverWait(self.driver, 0.1).until(
+                EC.visibility_of_element_located((By.ID, "gradeCurricular"))
+            )
+
+            soup = BeautifulSoup(self.driver.page_source, "html.parser")
+
+            duracao_ideal_span = soup.find("span", class_="duridlhab")
+            if duracao_ideal_span:
+                curso.duracao_ideal = int(duracao_ideal_span.text.strip())
+            else:
+                raise ValueError("Span 'duridlhab' não encontrado")
+            duracao_max_span = soup.find("span", class_="durmaxhab")
+            if duracao_max_span:
+                curso.duracao_max = int(duracao_max_span.text.strip())
+            else:
+                raise ValueError("Span 'durmaxhab' não encontrado")
+
+            grade_curricular_div = soup.find("div", id="gradeCurricular")
+            tables = grade_curricular_div.find_all("table")
+
+            try:
+                curso.obrigatorias = self._populate_disciplinas(curso.nome, tables[0])
+                curso.optativas_livres = self._populate_disciplinas(
+                    curso.nome, tables[1]
+                )
+                curso.optativas_eletivas = self._populate_disciplinas(
+                    curso.nome, tables[2]
+                )
+            except IndexError:
+                pass
+        except TimeoutException as _:
             pass
 
-        # Click the "Buscar" button again to reset the page
+        # Click the "Buscar" tab to reset the page
+        self._wait_overlay()
         buscar_button = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
         )
         buscar_button.click()
-
-        # Wait for the overlay to disappear
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
-            )
-        )
 
     def _populate_disciplinas(
         self, curso_nome: str, table: Tag
