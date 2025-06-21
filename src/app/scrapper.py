@@ -3,10 +3,7 @@ from shutil import which
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-<<<<<<< HEAD
 from selenium.common.exceptions import TimeoutException
-=======
->>>>>>> 9ef5f62087c3dcd3027bb503e4b6afb9474f635f
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
