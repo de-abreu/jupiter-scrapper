@@ -1,10 +1,7 @@
 import time
-from logging import raiseExceptions
 from shutil import which
-from sys import exception
-from typing import Any
 
-from bs4 import BeautifulSoup, NavigableString, ResultSet
+from bs4 import BeautifulSoup
 from bs4.element import Tag
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import Chrome
@@ -18,73 +15,94 @@ from .dataclasses import Curso, Disciplina, Unidade
 
 
 class Scrapper:
+    TABLE_STYLE: str = "rounded_outline"
     URL: str = "https://uspdigital.usp.br/jupiterweb/jupCarreira.jsp?codmnu=8275"
+    init_success: bool = False
+    disciplinas_dict: dict[str, Disciplina]
     driver: Chrome
     unidades_dict: dict[str, Unidade]
-    disciplinas_dict: dict[str, Disciplina]
-    table_style: str = "rounded_outline"
 
     def __init__(self, max: int) -> None:
         service = Service(executable_path=which("chromedriver"))
 
+        print(
+            "Espere enquanto coletamos as informações, isso pode levar alguns minutos..."
+        )
         with Chrome(service=service) as driver:
-            driver.get(self.URL)
             try:
-                _ = WebDriverWait(driver, 30).until(
-                    lambda d: bool(
-                        d.execute_script("return document.readyState") == "complete"
-                    )
+                driver.get(self.URL)
+                self.driver = driver
+            except Exception:
+                print(
+                    "Erro: Conexão à internet indisponível. Conecte-se e tente novamente."
                 )
-            except TimeoutException:
-                raise Exception("Pagina demorou muito tempo para carregar.")
+                return
 
-            self.driver = driver
-            self.unidades_dict = self._init_unidades(max)
+            while True:
+                try:
+                    _ = WebDriverWait(self.driver, 30).until(
+                        lambda d: bool(
+                            d.execute_script("return document.readyState") == "complete"
+                        )
+                    )
+                    self.unidades_dict = self._init_unidades(max)
+                    break
+                except TimeoutException:
+                    if not self._retry():
+                        return
+
             self.disciplinas_dict = {}
             for unidade in self.unidades_dict.values():
-                unidade.cursos = self._fetch_cursos(unidade.nome)
-                print(unidade.nome)
+                unidade.cursos, cancelled = self._fetch_cursos(unidade.nome)
+                if cancelled:
+                    return
+            self.init_success = True
+
+    @staticmethod
+    def _retry() -> bool:
+        match (
+            input(
+                "Falha de conexão ao sistema Jupiter, deseja tentar conectar novamente? [s]im/[n]ão: "
+            )
+            .strip()
+            .upper()
+        ):
+            case "S" | "SIM":
+                return True
+            case _:
+                print("Pesquisa cancelada.")
+                return False
 
     def _wait_overlay(self) -> None:
-        try:
-            _ = WebDriverWait(self.driver, 30).until(
-                EC.invisibility_of_element_located(
-                    (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
-                )
+        _ = WebDriverWait(self.driver, 30).until(
+            EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
             )
-        except TimeoutException:
-            raise Exception("Overlay demorou muito tempo para desaparecer.")
+        )
 
     def _init_unidades(self, max: int) -> dict[str, Unidade]:
-        unidades_dict: dict[str, Unidade] = {}
-        try:
-            # Wait for the dropdown to be clickable and click it
-            unidades_dropdown = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.ID, "comboUnidade"))
-            )
-            unidades_dropdown.click()
-        except TimeoutException:
-            raise Exception("Erro: Tempo excedido ao carregar dropdown de Unidades.")
+        # Wait for the dropdown to be clickable and click it
+        unidades_dropdown = WebDriverWait(self.driver, 30).until(
+            EC.element_to_be_clickable((By.ID, "comboUnidade"))
+        )
+        unidades_dropdown.click()
 
-        try:
-            # Wait for at least one option to be present and visible in the dropdown
-            _ = WebDriverWait(self.driver, 30).until(
-                lambda d: bool(
-                    len(d.find_elements(By.CSS_SELECTOR, "select#comboUnidade option"))
-                    > 1
-                )
+        # Wait for at least one option to be present and visible in the dropdown
+        _ = WebDriverWait(self.driver, 30).until(
+            lambda d: bool(
+                len(d.find_elements(By.CSS_SELECTOR, "select#comboUnidade option")) > 1
             )
-        except TimeoutException:
-            raise Exception("Erro: Tempo excedido ao carregar dropdown de Unidades.")
+        )
 
         # Parse the page with BeautifulSoup
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
         unidades_options = soup.find("select", id="comboUnidade")
         if not unidades_options:
             raise ValueError("Dropdown para Unidades não foi encontrado")
-
         count = 0
-        for option in unidades_options.find_all("option"):  # type: ignore
+        unidades_dict: dict[str, Unidade] = {}
+
+        for option in unidades_options.find_all("option"):
             if count == max:
                 return unidades_dict
             if text := option.text.strip():
@@ -95,106 +113,96 @@ class Scrapper:
 
         return unidades_dict
 
-    def _fetch_cursos(self, unidade_nome: str) -> dict[str, Curso]:
-        try:
-            # Select the unit in the dropdown
-            unidade_dropdown = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.ID, "comboUnidade"))
-            )
-            unidade_dropdown.send_keys(unidade_nome)
-        except TimeoutException:
-            raise Exception(
-                f"Erro: Tempo excedido ao selecionar a unidade {unidade_nome}."
-            )
-
-        try:
-            # Parse the course dropdown
-            curso_dropdown = WebDriverWait(self.driver, 30).until(
-                EC.presence_of_element_located((By.ID, "comboCurso"))
-            )
-            curso_dropdown.click()
-        except TimeoutException:
-            raise Exception(
-                f"Erro: Tempo excedido ao clicar no dropdown de Cursos para a unidade {unidade_nome}."
-            )
-
-        try:
-            # Wait for the course dropdown options to be present and visible
-            _ = WebDriverWait(self.driver, 30).until(
-                lambda d: bool(
-                    len(d.find_elements(By.CSS_SELECTOR, "select#comboCurso option"))
-                    > 1
+    def _fetch_cursos(self, unidade_nome: str) -> tuple[dict[str, Curso], bool]:
+        cursos_dict: dict[str, Curso] = {}
+        while True:
+            try:
+                # Select the unit in the dropdown
+                unidade_dropdown = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.ID, "comboUnidade"))
                 )
-            )
-        except TimeoutException:
-            raise Exception(
-                f"Erro: Tempo excedido ao carregar dropdown de Cursos para a unidade {unidade_nome}."
-            )
+                unidade_dropdown.send_keys(unidade_nome)
+
+                # Click on the comboCurso dropdown
+                curso_dropdown = WebDriverWait(self.driver, 30).until(
+                    EC.presence_of_element_located((By.ID, "comboCurso"))
+                )
+                curso_dropdown.click()
+
+                # Wait for options to be present and visible
+                _ = WebDriverWait(self.driver, 30).until(
+                    lambda d: bool(
+                        len(
+                            d.find_elements(By.CSS_SELECTOR, "select#comboCurso option")
+                        )
+                        > 1
+                    )
+                )
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return cursos_dict, True
 
         time.sleep(0.05)
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
         curso_options = soup.find("select", id="comboCurso")
-
-        cursos_dict: dict[str, Curso] = {}
-
         if not curso_options:
             raise ValueError("Dropdown para Cursos não foi encontrado")
+
         for option in curso_options.find_all("option"):
             if text := option.text.strip():
                 nome, periodo = text.rsplit(" - ", 1)
                 cursos_dict[nome] = Curso(nome=nome, periodo=periodo)
         for curso in cursos_dict.values():
-            print(curso.nome)
-            self._populate_curso(curso)
+            if cancelled := self._populate_curso(curso):
+                return cursos_dict, True
+        return cursos_dict, False
 
-        return cursos_dict
+    def _populate_curso(self, curso: Curso) -> bool:
+        while True:
+            try:
+                # Select the course in the dropdown
+                curso_dropdown = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.ID, "comboCurso"))
+                )
+                curso_dropdown.send_keys(curso.nome)
 
-    def _populate_curso(self, curso: Curso) -> None:
-        try:
-            # Select the course in the dropdown
-            curso_dropdown = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.ID, "comboCurso"))
-            )
-            curso_dropdown.send_keys(curso.nome)
-        except TimeoutException:
-            raise Exception("Erro: Tempo excedido ao selecionar o curso.")
-
-        try:
-            # Click the "Buscar" button
-            buscar_button = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.ID, "enviar"))
-            )
-            buscar_button.click()
-        except TimeoutException:
-            raise Exception("Erro: Tempo excedido ao clicar no botão 'Buscar'.")
-
-        self._wait_overlay()
+                # Click the "Buscar" button
+                buscar_button = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.ID, "enviar"))
+                )
+                buscar_button.click()
+                self._wait_overlay()
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return True
 
         # Now click the "Grade Curricular" tab
-        try:
-            grade_tab = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
-            )
-            grade_tab.click()
-        except TimeoutException:
-            raise Exception(
-                f"Erro: Tempo excedido ao clicar na aba 'Grade Curricular' para o curso {curso.nome}."
-            )
-        except Exception as _:
-            # If "Grade Curricular" tab is unavailable
-            print("Hey!")
+        while True:
             try:
-                close_button = WebDriverWait(self.driver, 30).until(
-                    EC.element_to_be_clickable(
-                        (By.CSS_SELECTOR, "div.ui-dialog-buttonset")
-                    )
+                grade_tab = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
                 )
-                close_button.click()
+                grade_tab.click()
+                break
             except TimeoutException:
-                raise Exception("Erro: Tempo excedido ao fechar o diálogo.")
-            return
+                if not self._retry():
+                    return True
+            except Exception as _:
+                # If "Grade Curricular" tab is unavailable
+                try:
+                    close_button = WebDriverWait(self.driver, 30).until(
+                        EC.element_to_be_clickable(
+                            (By.CSS_SELECTOR, "div.ui-dialog-buttonset")
+                        )
+                    )
+                    close_button.click()
+                    return False
+                except TimeoutException:
+                    if not self._retry():
+                        return True
 
-        # If the tab is available, but contains no tables
         try:
             _ = WebDriverWait(self.driver, 0.1).until(
                 EC.visibility_of_element_located((By.ID, "gradeCurricular"))
@@ -226,22 +234,23 @@ class Scrapper:
                 )
             except IndexError:
                 pass
-        except TimeoutException as _:
-            raise Exception(
-                f"Erro: Tempo excedido ao buscar a grade curricular do curso {curso.nome}."
-            )
+        # If the "Grade Curricular" tab is available, but its page contains no tables
+        except TimeoutException:
+            pass
 
         # Click the "Buscar" tab to reset the page
-        self._wait_overlay()
-        try:
-            buscar_button = WebDriverWait(self.driver, 30).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
-            )
-            buscar_button.click()
-        except TimeoutException:
-            raise Exception(
-                f"Erro: Tempo excedido ao clicar na aba 'Buscar' para o curso {curso.nome}."
-            )
+        while True:
+            try:
+                self._wait_overlay()
+                buscar_button = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
+                )
+                buscar_button.click()
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return True
+        return False
 
     def _populate_disciplinas(
         self, curso_nome: str, table: Tag
@@ -293,28 +302,31 @@ class Scrapper:
                 f"{curso.duracao_max} semestres",
             ],
         ]
-        print("\n" + tabulate(table, headers="firstrow", tablefmt=self.table_style))
+        print("\n" + tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
         print("\nDisciplinas obrigatórias:")
 
         table = [["Nome da Disciplina", "Código"]]
         for disciplina in curso.obrigatorias.values():
-            table.append([disciplina.nome, disciplina.codigo])
-        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+            nome_normalizado = disciplina.nome.replace(
+                "–", "-"
+            )  # Replace en dash with hyphen
+            table.append([nome_normalizado, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
         print("\nDisciplinas optativas livres:")
 
         table = [["Nome da Disciplina", "Código"]]
         for disciplina in curso.optativas_livres.values():
             table.append([disciplina.nome, disciplina.codigo])
-        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
         print("\nDisciplinas optativas eletivas:")
 
         table = [["Nome da Disciplina", "Código"]]
         for disciplina in curso.optativas_eletivas.values():
             table.append([disciplina.nome, disciplina.codigo])
-        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
     def _listar_cursos_unidade(self, unidade: Unidade) -> None:
         counter = 0
@@ -328,7 +340,7 @@ class Scrapper:
 
         while True:
             print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
-            print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+            print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
             prompt = "Digite o número do curso para listar as informações ou 'sair' para voltar ao menu:"
             print("\n" + prompt)
@@ -360,7 +372,7 @@ class Scrapper:
         prompt = "Para buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu:"
 
         while True:
-            print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+            print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
             print("\n" + prompt)
 
             sigla = input("> ").strip().upper()
@@ -412,7 +424,7 @@ class Scrapper:
                         disciplina.creditos_trabalho,
                     ],
                 ]
-                print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+                print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
                 table = [
                     ["Carga Horária", f"{disciplina.carga_horaria} horas"],
@@ -420,14 +432,14 @@ class Scrapper:
                     ["Horas de PCC", f"{disciplina.horas_pcc} horas"],
                     ["Atividades TPA", f"{disciplina.atividades_tpa} horas"],
                 ]
-                print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+                print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
                 table = [["Curso"]]
                 for curso in disciplina.cursos:
                     table.append([curso])
 
                 print("\nCursos que oferecem essa disciplina:")
-                print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+                print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
             else:
                 print("Código inválido, tente novamente.")
 
@@ -439,7 +451,7 @@ class Scrapper:
                 table.append([disciplina.nome, disciplina.codigo, str(qtd_cursos)])
 
         print("\nDisciplinas comuns a mais de um curso:")
-        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
 
     def menu(self) -> None:
         prompt = "Busque informações no sistema Jupiter, ou digite 'sair' para fechar o programa:"
@@ -451,9 +463,9 @@ class Scrapper:
             ["3", "Listar dados de uma disciplina específica"],
             ["4", "Buscar disciplinas comuns a mais de um curso"],
         ]
-        while True:
+        while self.init_success:
             print("\n" + prompt)
-            print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+            print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
             match input("> ").strip().upper():
                 case "1":
                     self._listar_unidades()

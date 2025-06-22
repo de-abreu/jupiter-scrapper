@@ -6,12 +6,12 @@ class Disciplina:
     nome: str
     codigo: str
     cursos: set[str]
-    creditos_aula: int = 0
-    creditos_trabalho: int = 0
-    carga_horaria: int = 0
-    horas_estagio: int = 0
-    horas_pcc: int = 0
-    atividades_tpa: int = 0
+    creditos_aula: int
+    creditos_trabalho: int
+    carga_horaria: int
+    horas_estagio: int
+    horas_pcc: int
+    atividades_tpa: int
 
 
 @dataclass
