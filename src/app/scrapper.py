@@ -180,7 +180,6 @@ class Scrapper:
             raise Exception(
                 f"Erro: Tempo excedido ao clicar na aba 'Grade Curricular' para o curso {curso.nome}."
             )
-            return
         except Exception as _:
             # If "Grade Curricular" tab is unavailable
             print("Hey!")
