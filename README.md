@@ -1,4 +1,4 @@
-# jupiter-scrapper
+# Jupiter Scrapper
 
 ![Captura de tela do jupiter-scrapper em execução](./img/snapshot_2025-06-22_15-44-54.png)
 
@@ -12,6 +12,8 @@ Universidade de São Paulo (USP) por meio do sistema online
   - [Usando `nix`](#usando-nix)
   - [Usando `pip`](#usando-pip)
   - [Usando `poetry`](#usando-poetry)
+- [Changelog](#changelog)
+- [Autores](#autores)
   <!--toc:end-->
 
 ## Instruções de uso
@@ -82,15 +84,30 @@ poetry run python src/main.py [arg]
 Onde `[arg]` descreve uma quantidade máxima, se houver, de unidades da USP a
 serem pesquisadas.
 
-> [!NOTE] `poetry` pode ser instalado com `pip`, se necessário:
+> [!NOTE] > `poetry` pode ser instalado com `pip`, se necessário:
 >
 > ```bash
 >    pip install -u poetry
 > ```
 
-## Desenvolvimento orientado a testes
+## Changelog
 
 O presente programa foi desenvolvido fazendo uso de uma metodologia de
 desenvolvimento orientada a testes (_Test Driven Development, TDD_). Para mais
 informações sobre a progressão da implementação de funcionalidades ao programa,
 confira o nosso [changelog](./CHANGELOG).
+
+## Autores
+
+São os autores deste programa:
+
+| Nome                       | nUSP     |
+| -------------------------- | -------- |
+| Guilherme de Abreu Barreto | 12543033 |
+| Miguel Reis de Araújo      | 12752457 |
+
+---
+
+<small>Foi feito uso da inteligência artificial
+[deepseek-coder](https://github.com/deepseek-ai/deepseek-coder) como assistente
+para a elaboração deste software.</small>
