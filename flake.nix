@@ -22,9 +22,13 @@
     dependencies = [pythonEnv] ++ chromeDeps;
 
     # Script to run the Python app with arguments
-    runScript = pkgs.writeShellScriptBin "jupiter-scrapper" ''
-      ${pythonEnv}/bin/python src/main.py "$@"
-    '';
+    runScript = pkgs.writeShellApplication {
+      name = "jupiter-scrapper";
+      runtimeInputs = dependencies;
+      text = ''
+        ${pythonEnv}/bin/python src/main.py "$@"
+      '';
+    };
   in {
     # For `nix develop`
     devShells.${system}.default = pkgs.mkShell {
@@ -35,11 +39,6 @@
     };
 
     # For `nix run`
-    apps.${system} = {
-      default = {
-        type = "app";
-        program = "${runScript}/bin/jupiter-scrapper";
-      };
-    };
+    packages.${system}.default = runScript;
   };
 }
