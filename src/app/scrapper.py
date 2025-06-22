@@ -16,7 +16,9 @@ from .dataclasses import Curso, Disciplina, Unidade
 
 class Scrapper:
     TABLE_STYLE: str = "rounded_outline"
+    TIMEOUT_SECONDS: int = 30
     URL: str = "https://uspdigital.usp.br/jupiterweb/jupCarreira.jsp?codmnu=8275"
+
     init_success: bool = False
     disciplinas_dict: dict[str, Disciplina]
     driver: Chrome
@@ -40,7 +42,7 @@ class Scrapper:
 
             while True:
                 try:
-                    _ = WebDriverWait(self.driver, 30).until(
+                    _ = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                         lambda d: bool(
                             d.execute_script("return document.readyState") == "complete"
                         )
@@ -74,7 +76,7 @@ class Scrapper:
                 return False
 
     def _wait_overlay(self) -> None:
-        _ = WebDriverWait(self.driver, 30).until(
+        _ = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
             EC.invisibility_of_element_located(
                 (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
             )
@@ -82,13 +84,13 @@ class Scrapper:
 
     def _init_unidades(self, max: int) -> dict[str, Unidade]:
         # Wait for the dropdown to be clickable and click it
-        unidades_dropdown = WebDriverWait(self.driver, 30).until(
+        unidades_dropdown = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
             EC.element_to_be_clickable((By.ID, "comboUnidade"))
         )
         unidades_dropdown.click()
 
         # Wait for at least one option to be present and visible in the dropdown
-        _ = WebDriverWait(self.driver, 30).until(
+        _ = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
             lambda d: bool(
                 len(d.find_elements(By.CSS_SELECTOR, "select#comboUnidade option")) > 1
             )
@@ -118,19 +120,19 @@ class Scrapper:
         while True:
             try:
                 # Select the unit in the dropdown
-                unidade_dropdown = WebDriverWait(self.driver, 30).until(
-                    EC.element_to_be_clickable((By.ID, "comboUnidade"))
-                )
+                unidade_dropdown = WebDriverWait(
+                    self.driver, self.TIMEOUT_SECONDS
+                ).until(EC.element_to_be_clickable((By.ID, "comboUnidade")))
                 unidade_dropdown.send_keys(unidade_nome)
 
                 # Click on the comboCurso dropdown
-                curso_dropdown = WebDriverWait(self.driver, 30).until(
+                curso_dropdown = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                     EC.presence_of_element_located((By.ID, "comboCurso"))
                 )
                 curso_dropdown.click()
 
                 # Wait for options to be present and visible
-                _ = WebDriverWait(self.driver, 30).until(
+                _ = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                     lambda d: bool(
                         len(
                             d.find_elements(By.CSS_SELECTOR, "select#comboCurso option")
@@ -162,13 +164,13 @@ class Scrapper:
         while True:
             try:
                 # Select the course in the dropdown
-                curso_dropdown = WebDriverWait(self.driver, 30).until(
+                curso_dropdown = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                     EC.element_to_be_clickable((By.ID, "comboCurso"))
                 )
                 curso_dropdown.send_keys(curso.nome)
 
                 # Click the "Buscar" button
-                buscar_button = WebDriverWait(self.driver, 30).until(
+                buscar_button = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                     EC.element_to_be_clickable((By.ID, "enviar"))
                 )
                 buscar_button.click()
@@ -181,7 +183,7 @@ class Scrapper:
         # Now click the "Grade Curricular" tab
         while True:
             try:
-                grade_tab = WebDriverWait(self.driver, 30).until(
+                grade_tab = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
                 )
                 grade_tab.click()
@@ -192,7 +194,9 @@ class Scrapper:
             except Exception as _:
                 # If "Grade Curricular" tab is unavailable
                 try:
-                    close_button = WebDriverWait(self.driver, 30).until(
+                    close_button = WebDriverWait(
+                        self.driver, self.TIMEOUT_SECONDS
+                    ).until(
                         EC.element_to_be_clickable(
                             (By.CSS_SELECTOR, "div.ui-dialog-buttonset")
                         )
@@ -242,7 +246,7 @@ class Scrapper:
         while True:
             try:
                 self._wait_overlay()
-                buscar_button = WebDriverWait(self.driver, 30).until(
+                buscar_button = WebDriverWait(self.driver, self.TIMEOUT_SECONDS).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
                 )
                 buscar_button.click()
