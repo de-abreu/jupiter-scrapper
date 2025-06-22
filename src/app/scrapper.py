@@ -1,56 +1,107 @@
-from bs4.element import Tag
-from .dataclasses import Disciplina, Unidade, Curso
+import time
 from shutil import which
+
 from bs4 import BeautifulSoup
+from bs4.element import Tag
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
+from selenium.webdriver.support.ui import WebDriverWait
+from tabulate import tabulate
+
+from .dataclasses import Curso, Disciplina, Unidade
 
 
 class Scrapper:
+    TABLE_STYLE: str = "rounded_outline"
     URL: str = "https://uspdigital.usp.br/jupiterweb/jupCarreira.jsp?codmnu=8275"
+    init_success: bool = False
+    disciplinas_dict: dict[str, Disciplina]
     driver: Chrome
     unidades_dict: dict[str, Unidade]
-    disciplinas_dict: dict[str, Disciplina]
 
     def __init__(self, max: int) -> None:
         service = Service(executable_path=which("chromedriver"))
 
+        print(
+            "Espere enquanto coletamos as informações, isso pode levar alguns minutos..."
+        )
         with Chrome(service=service) as driver:
-            driver.get(self.URL)
-            self.driver = driver
-            self.unidades_dict = self._init_unidades(max)
+            try:
+                driver.get(self.URL)
+                self.driver = driver
+            except Exception:
+                print(
+                    "Erro: Conexão à internet indisponível. Conecte-se e tente novamente."
+                )
+                return
+
+            while True:
+                try:
+                    _ = WebDriverWait(self.driver, 30).until(
+                        lambda d: bool(
+                            d.execute_script("return document.readyState") == "complete"
+                        )
+                    )
+                    self.unidades_dict = self._init_unidades(max)
+                    break
+                except TimeoutException:
+                    if not self._retry():
+                        return
+
             self.disciplinas_dict = {}
             for unidade in self.unidades_dict.values():
-                unidade.cursos = self._fetch_cursos(unidade.nome)
+                unidade.cursos, cancelled = self._fetch_cursos(unidade.nome)
+                if cancelled:
+                    return
+            self.init_success = True
+
+    @staticmethod
+    def _retry() -> bool:
+        match (
+            input(
+                "Falha de conexão ao sistema Jupiter, deseja tentar conectar novamente? [s]im/[n]ão: "
+            )
+            .strip()
+            .upper()
+        ):
+            case "S" | "SIM":
+                return True
+            case _:
+                print("Pesquisa cancelada.")
+                return False
+
+    def _wait_overlay(self) -> None:
+        _ = WebDriverWait(self.driver, 30).until(
+            EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
+            )
+        )
 
     def _init_unidades(self, max: int) -> dict[str, Unidade]:
         # Wait for the dropdown to be clickable and click it
-        unidades_dropdown = WebDriverWait(self.driver, 10).until(
+        unidades_dropdown = WebDriverWait(self.driver, 30).until(
             EC.element_to_be_clickable((By.ID, "comboUnidade"))
         )
         unidades_dropdown.click()
 
-        # Wait for the options to be present in the dropdown
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "select#comboUnidade option")
+        # Wait for at least one option to be present and visible in the dropdown
+        _ = WebDriverWait(self.driver, 30).until(
+            lambda d: bool(
+                len(d.find_elements(By.CSS_SELECTOR, "select#comboUnidade option")) > 1
             )
         )
 
         # Parse the page with BeautifulSoup
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
-        # Extract options
         unidades_options = soup.find("select", id="comboUnidade")
         if not unidades_options:
             raise ValueError("Dropdown para Unidades não foi encontrado")
-
-        unidades_dict: dict[str, Unidade] = {}
         count = 0
+        unidades_dict: dict[str, Unidade] = {}
+
         for option in unidades_options.find_all("option"):
             if count == max:
                 return unidades_dict
@@ -59,99 +110,147 @@ class Scrapper:
                 sigla = sigla.rstrip(" )")
                 unidades_dict[sigla] = Unidade(nome=nome, sigla=sigla)
                 count += 1
+
         return unidades_dict
 
-    def _fetch_cursos(self, unidade_nome: str) -> dict[str, Curso]:
-        # Select the unit in the dropdown
-        unidade_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "comboUnidade"))
-        )
-        unidade_dropdown.send_keys(unidade_nome)
+    def _fetch_cursos(self, unidade_nome: str) -> tuple[dict[str, Curso], bool]:
+        cursos_dict: dict[str, Curso] = {}
+        while True:
+            try:
+                # Select the unit in the dropdown
+                unidade_dropdown = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.ID, "comboUnidade"))
+                )
+                unidade_dropdown.send_keys(unidade_nome)
 
-        # Wait for the course dropdown options to be present
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "select#comboCurso option")
-            )
-        )
+                # Click on the comboCurso dropdown
+                curso_dropdown = WebDriverWait(self.driver, 30).until(
+                    EC.presence_of_element_located((By.ID, "comboCurso"))
+                )
+                curso_dropdown.click()
 
-        # Parse the course dropdown
-        curso_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, "comboCurso"))
-        )
-        curso_dropdown.click()
+                # Wait for options to be present and visible
+                _ = WebDriverWait(self.driver, 30).until(
+                    lambda d: bool(
+                        len(
+                            d.find_elements(By.CSS_SELECTOR, "select#comboCurso option")
+                        )
+                        > 1
+                    )
+                )
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return cursos_dict, True
+
         time.sleep(0.05)
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
         curso_options = soup.find("select", id="comboCurso")
-
-        cursos_dict: dict[str, Curso] = {}
         if not curso_options:
             raise ValueError("Dropdown para Cursos não foi encontrado")
+
         for option in curso_options.find_all("option"):
             if text := option.text.strip():
-                nome, periodo = text.split(" - ", 1)
+                nome, periodo = text.rsplit(" - ", 1)
                 cursos_dict[nome] = Curso(nome=nome, periodo=periodo)
         for curso in cursos_dict.values():
-            self._populate_curso(curso)
-        return cursos_dict
+            if cancelled := self._populate_curso(curso):
+                return cursos_dict, True
+        return cursos_dict, False
 
-    def _populate_curso(self, curso: Curso) -> None:
-        # Select the course in the dropdown
-        curso_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "comboCurso"))
-        )
-        curso_dropdown.send_keys(curso.nome)
+    def _populate_curso(self, curso: Curso) -> bool:
+        while True:
+            try:
+                # Select the course in the dropdown
+                curso_dropdown = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.ID, "comboCurso"))
+                )
+                curso_dropdown.send_keys(curso.nome)
 
-        # Click the "Buscar" button
-        buscar_button = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "enviar"))
-        )
-        buscar_button.click()
+                # Click the "Buscar" button
+                buscar_button = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.ID, "enviar"))
+                )
+                buscar_button.click()
+                self._wait_overlay()
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return True
 
-        # Wait for the overlay to disappear
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
-            )
-        )
         # Now click the "Grade Curricular" tab
-        grade_tab = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
-        )
-        grade_tab.click()
-
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.visibility_of_element_located((By.ID, "gradeCurricular"))
-        )
-
-        soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
-        duracao_ideal_span = soup.find("span", class_="duridlhab")
-        if duracao_ideal_span:
-            curso.duracao_ideal = int(duracao_ideal_span.text.strip())
-        else:
-            raise ValueError("Span 'duridlhab' não encontrado")
-        duracao_max_span = soup.find("span", class_="durmaxhab")
-        if duracao_max_span:
-            curso.duracao_max = int(duracao_max_span.text.strip())
-        else:
-            raise ValueError("Span 'durmaxhab' não encontrado")
-
-        grade_curricular_div = soup.find("div", id="gradeCurricular")
-        tables = grade_curricular_div.find_all("table")
+        while True:
+            try:
+                grade_tab = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
+                )
+                grade_tab.click()
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return True
+            except Exception as _:
+                # If "Grade Curricular" tab is unavailable
+                try:
+                    close_button = WebDriverWait(self.driver, 30).until(
+                        EC.element_to_be_clickable(
+                            (By.CSS_SELECTOR, "div.ui-dialog-buttonset")
+                        )
+                    )
+                    close_button.click()
+                    return False
+                except TimeoutException:
+                    if not self._retry():
+                        return True
 
         try:
-            curso.obrigatorias = self._populate_disciplinas(curso.nome, tables[0])
-            curso.optativas_livres = self._populate_disciplinas(curso.nome, tables[1])
-            curso.optativas_eletivas = self._populate_disciplinas(curso.nome, tables[2])
-        except IndexError:
+            _ = WebDriverWait(self.driver, 0.1).until(
+                EC.visibility_of_element_located((By.ID, "gradeCurricular"))
+            )
+
+            soup = BeautifulSoup(self.driver.page_source, "html.parser")
+
+            duracao_ideal_span = soup.find("span", class_="duridlhab")
+            if duracao_ideal_span:
+                curso.duracao_ideal = int(duracao_ideal_span.text.strip())
+            else:
+                raise ValueError("Span 'duridlhab' não encontrado")
+            duracao_max_span = soup.find("span", class_="durmaxhab")
+            if duracao_max_span:
+                curso.duracao_max = int(duracao_max_span.text.strip())
+            else:
+                raise ValueError("Span 'durmaxhab' não encontrado")
+
+            grade_curricular_div = soup.find("div", id="gradeCurricular")
+            tables = grade_curricular_div.find_all("table")
+
+            try:
+                curso.obrigatorias = self._populate_disciplinas(curso.nome, tables[0])
+                curso.optativas_livres = self._populate_disciplinas(
+                    curso.nome, tables[1]
+                )
+                curso.optativas_eletivas = self._populate_disciplinas(
+                    curso.nome, tables[2]
+                )
+            except IndexError:
+                pass
+        # If the "Grade Curricular" tab is available, but its page contains no tables
+        except TimeoutException:
             pass
 
-        # Click the "Buscar" button again to reset the page
-        buscar_button = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
-        )
-        buscar_button.click()
+        # Click the "Buscar" tab to reset the page
+        while True:
+            try:
+                self._wait_overlay()
+                buscar_button = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
+                )
+                buscar_button.click()
+                break
+            except TimeoutException:
+                if not self._retry():
+                    return True
+        return False
 
     def _populate_disciplinas(
         self, curso_nome: str, table: Tag
@@ -193,29 +292,190 @@ class Scrapper:
             local_disciplinas_dict[codigo] = disciplina
         return local_disciplinas_dict
 
-    def menu(self) -> None:
-        prompt = """
-        Busque informações no sistema Jupiter. Opções:
-        1. Listar unidades disponíveis
-        2. Listar cursos disponíveis
-        3. Buscar curso
-        4. Buscar disciplina
-        5. Buscar disciplinas comuns a mais de um curso
-        6. Sair
-        Selecione [1-5]:
-        """
+    def _listar_dados_curso(self, curso: Curso) -> None:
+        table = [
+            ["Nome", "Período", "Duração Ideal", "Duração Máxima"],
+            [
+                curso.nome,
+                curso.periodo,
+                f"{curso.duracao_ideal} semestres",
+                f"{curso.duracao_max} semestres",
+            ],
+        ]
+        print("\n" + tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+        print("\nDisciplinas obrigatórias:")
+
+        table = [["Nome da Disciplina", "Código"]]
+        for disciplina in curso.obrigatorias.values():
+            nome_normalizado = disciplina.nome.replace(
+                "–", "-"
+            )  # Replace en dash with hyphen
+            table.append([nome_normalizado, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+        print("\nDisciplinas optativas livres:")
+
+        table = [["Nome da Disciplina", "Código"]]
+        for disciplina in curso.optativas_livres.values():
+            table.append([disciplina.nome, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+        print("\nDisciplinas optativas eletivas:")
+
+        table = [["Nome da Disciplina", "Código"]]
+        for disciplina in curso.optativas_eletivas.values():
+            table.append([disciplina.nome, disciplina.codigo])
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+    def _listar_cursos_unidade(self, unidade: Unidade) -> None:
+        counter = 0
+        table = [
+            ["Número", "Nome do Curso", "Período"],
+            ["0", "Listar Dados de Todos os Cursos", " -- "],
+        ]
+        for curso in unidade.cursos.values():
+            counter += 1
+            table.append([str(counter), curso.nome, curso.periodo])
+
+        while True:
+            print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
+            print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+            prompt = "Digite o número do curso para listar as informações ou 'sair' para voltar ao menu:"
+            print("\n" + prompt)
+
+            escolha = input("> ").strip().upper()
+            if escolha == "SAIR":
+                return
+            else:
+                escolha_numero = int(escolha)
+                if 1 <= escolha_numero <= counter:
+                    curso = list(unidade.cursos.values())[escolha_numero - 1]
+                    print(f"\n{escolha_numero}:")
+                    self._listar_dados_curso(curso)
+                elif escolha_numero == 0:
+                    counter = 1
+                    for curso in unidade.cursos.values():
+                        print(f"\n{counter}:")
+                        self._listar_dados_curso(curso)
+                        counter += 1
+                else:
+                    print("Número inválido, tente novamente.")
+
+    def _listar_unidades(self) -> None:
+        print("\nUnidades disponíveis:")
+        table = [["Sigla", "Nome"]]
+        for unidade in self.unidades_dict.values():
+            table.append([unidade.sigla, unidade.nome])
+
+        prompt = "Para buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu:"
+
+        while True:
+            print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+            print("\n" + prompt)
+
+            sigla = input("> ").strip().upper()
+            if sigla == "SAIR":
+                return
+            if sigla in self.unidades_dict:
+                _unidade = self.unidades_dict[sigla]
+                self._listar_cursos_unidade(_unidade)
+            else:
+                print("Sigla inválida, tente novamente.")
+
+    def _listar_todos_cursos(self) -> None:
+        print("\nDados de todos os cursos disponíveis:")
+        for unidade in self.unidades_dict.values():
+            print(f"\nUnidade: {unidade.nome} ({unidade.sigla})")
+            counter = 1
+            for curso in unidade.cursos.values():
+                print(f"\n{unidade.sigla} - {counter}:")
+                self._listar_dados_curso(curso)
+                counter += 1
+
+        prompt = "Digite 'sair' para voltar ao menu:"
+
+        while True:
+            print("\n" + prompt)
+
+            escolha = input("> ").strip().upper()
+            if escolha == "SAIR":
+                return
+            else:
+                print("Opção inválida, tente novamente.")
+
+    def _listar_disciplina(self) -> None:
+        prompt = "\nDigite o código da disciplina para listar as informações ou 'sair' para voltar ao menu:"
+
         while True:
             print(prompt)
-            match int(input()):
-                case 1:
+            codigo = input("> ").strip().upper()
+            if codigo == "SAIR":
+                return
+            if codigo in self.disciplinas_dict:
+                disciplina = self.disciplinas_dict[codigo]
+                table = [
+                    ["Nome", "Código", "Créditos Aula", "Créditos Trabalho"],
+                    [
+                        disciplina.nome,
+                        disciplina.codigo,
+                        disciplina.creditos_aula,
+                        disciplina.creditos_trabalho,
+                    ],
+                ]
+                print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+                table = [
+                    ["Carga Horária", f"{disciplina.carga_horaria} horas"],
+                    ["Horas de Estágio", f"{disciplina.horas_estagio} horas"],
+                    ["Horas de PCC", f"{disciplina.horas_pcc} horas"],
+                    ["Atividades TPA", f"{disciplina.atividades_tpa} horas"],
+                ]
+                print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+                table = [["Curso"]]
+                for curso in disciplina.cursos:
+                    table.append([curso])
+
+                print("\nCursos que oferecem essa disciplina:")
+                print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+            else:
+                print("Código inválido, tente novamente.")
+
+    def _listar_disciplinas_comuns(self) -> None:
+        table = [["Nome da Disciplina", "Código", "Qtd Cursos"]]
+        for disciplina in self.disciplinas_dict.values():
+            qtd_cursos = len(disciplina.cursos)
+            if qtd_cursos > 1:
+                table.append([disciplina.nome, disciplina.codigo, str(qtd_cursos)])
+
+        print("\nDisciplinas comuns a mais de um curso:")
+        print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+
+    def menu(self) -> None:
+        prompt = "Busque informações no sistema Jupiter, ou digite 'sair' para fechar o programa:"
+
+        table = [
+            ["Opção", "Descrição"],
+            ["1", "Listar unidades disponíveis"],
+            ["2", "Listar dados de todos os cursos disponíveis"],
+            ["3", "Listar dados de uma disciplina específica"],
+            ["4", "Buscar disciplinas comuns a mais de um curso"],
+        ]
+        while self.init_success:
+            print("\n" + prompt)
+            print(tabulate(table, headers="firstrow", tablefmt=self.TABLE_STYLE))
+            match input("> ").strip().upper():
+                case "1":
                     self._listar_unidades()
-                case 2:
-                    self._listar_cursos()
-                case 3:
-                    self._buscar_disciplina()
-                case 4:
+                case "2":
+                    self._listar_todos_cursos()
+                case "3":
+                    self._listar_disciplina()
+                case "4":
                     self._listar_disciplinas_comuns()
-                case 5:
+                case "SAIR":
                     return
                 case _:
-                    raise ValueError("Somente valores de 1 à 5 são aceitos")
+                    raise ValueError("Valor inválido, tente novamente.")
