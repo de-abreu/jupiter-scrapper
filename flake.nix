@@ -20,6 +20,11 @@
       ]);
     chromeDeps = with pkgs; [chromium chromedriver];
     dependencies = [pythonEnv] ++ chromeDeps;
+
+    # Script to run the Python app with arguments
+    runScript = pkgs.writeShellScriptBin "jupiter-scrapper" ''
+      ${pythonEnv}/bin/python src/main.py "$@"
+    '';
   in {
     # For `nix develop`
     devShells.${system}.default = pkgs.mkShell {
@@ -27,6 +32,14 @@
       shellHook = ''
         echo "🚀 Welcome to the Jupiter Scrapper dev environment!"
       '';
+    };
+
+    # For `nix run`
+    apps.${system} = {
+      default = {
+        type = "app";
+        program = "${runScript}/bin/jupiter-scrapper";
+      };
     };
   };
 }
