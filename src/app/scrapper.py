@@ -358,12 +358,14 @@ class Scrapper:
                     curso = list(unidade.cursos.values())[escolha_numero - 1]
                     print(f"\n{escolha_numero}:")
                     self._listar_dados_curso(curso)
+                    self._listar_disciplina()
                 elif escolha_numero == 0:
                     counter = 1
                     for curso in unidade.cursos.values():
                         print(f"\n{counter}:")
                         self._listar_dados_curso(curso)
                         counter += 1
+                    self._listar_disciplina()
                 else:
                     print("Número inválido, tente novamente.")
 
@@ -410,7 +412,7 @@ class Scrapper:
                 print("Opção inválida, tente novamente.")
 
     def _listar_disciplina(self) -> None:
-        prompt = "\nDigite o código da disciplina para listar as informações ou 'sair' para voltar ao menu:"
+        prompt = "\nDigite o código de uma disciplina para listar as informações ou 'sair' para voltar ao menu:"
 
         while True:
             print(prompt)
