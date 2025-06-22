@@ -1,7 +1,10 @@
 import time
+from logging import raiseExceptions
 from shutil import which
+from sys import exception
+from typing import Any
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, ResultSet
 from bs4.element import Tag
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import Chrome
@@ -26,6 +29,15 @@ class Scrapper:
 
         with Chrome(service=service) as driver:
             driver.get(self.URL)
+            try:
+                _ = WebDriverWait(driver, 30).until(
+                    lambda d: bool(
+                        d.execute_script("return document.readyState") == "complete"
+                    )
+                )
+            except TimeoutException:
+                raise Exception("Pagina demorou muito tempo para carregar.")
+
             self.driver = driver
             self.unidades_dict = self._init_unidades(max)
             self.disciplinas_dict = {}
@@ -34,37 +46,45 @@ class Scrapper:
                 print(unidade.nome)
 
     def _wait_overlay(self) -> None:
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
+        try:
+            _ = WebDriverWait(self.driver, 30).until(
+                EC.invisibility_of_element_located(
+                    (By.CSS_SELECTOR, "div.blockUI.blockOverlay")
+                )
             )
-        )
+        except TimeoutException:
+            raise Exception("Overlay demorou muito tempo para desaparecer.")
 
     def _init_unidades(self, max: int) -> dict[str, Unidade]:
-        # Wait for the dropdown to be clickable and click it
-        unidades_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "comboUnidade"))
-        )
-        unidades_dropdown.click()
-
-        # Wait for the options to be present in the dropdown
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "select#comboUnidade option")
+        unidades_dict: dict[str, Unidade] = {}
+        try:
+            # Wait for the dropdown to be clickable and click it
+            unidades_dropdown = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.ID, "comboUnidade"))
             )
-        )
+            unidades_dropdown.click()
+        except TimeoutException:
+            raise Exception("Erro: Tempo excedido ao carregar dropdown de Unidades.")
+
+        try:
+            # Wait for at least one option to be present and visible in the dropdown
+            _ = WebDriverWait(self.driver, 30).until(
+                lambda d: bool(
+                    len(d.find_elements(By.CSS_SELECTOR, "select#comboUnidade option"))
+                    > 1
+                )
+            )
+        except TimeoutException:
+            raise Exception("Erro: Tempo excedido ao carregar dropdown de Unidades.")
 
         # Parse the page with BeautifulSoup
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
-        # Extract options
         unidades_options = soup.find("select", id="comboUnidade")
         if not unidades_options:
             raise ValueError("Dropdown para Unidades não foi encontrado")
 
-        unidades_dict: dict[str, Unidade] = {}
         count = 0
-        for option in unidades_options.find_all("option"):
+        for option in unidades_options.find_all("option"):  # type: ignore
             if count == max:
                 return unidades_dict
             if text := option.text.strip():
@@ -72,32 +92,51 @@ class Scrapper:
                 sigla = sigla.rstrip(" )")
                 unidades_dict[sigla] = Unidade(nome=nome, sigla=sigla)
                 count += 1
+
         return unidades_dict
 
     def _fetch_cursos(self, unidade_nome: str) -> dict[str, Curso]:
-        # Select the unit in the dropdown
-        unidade_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "comboUnidade"))
-        )
-        unidade_dropdown.send_keys(unidade_nome)
-
-        # Wait for the course dropdown options to be present
-        _ = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "select#comboCurso option")
+        try:
+            # Select the unit in the dropdown
+            unidade_dropdown = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.ID, "comboUnidade"))
             )
-        )
+            unidade_dropdown.send_keys(unidade_nome)
+        except TimeoutException:
+            raise Exception(
+                f"Erro: Tempo excedido ao selecionar a unidade {unidade_nome}."
+            )
 
-        # Parse the course dropdown
-        curso_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, "comboCurso"))
-        )
-        curso_dropdown.click()
+        try:
+            # Parse the course dropdown
+            curso_dropdown = WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located((By.ID, "comboCurso"))
+            )
+            curso_dropdown.click()
+        except TimeoutException:
+            raise Exception(
+                f"Erro: Tempo excedido ao clicar no dropdown de Cursos para a unidade {unidade_nome}."
+            )
+
+        try:
+            # Wait for the course dropdown options to be present and visible
+            _ = WebDriverWait(self.driver, 30).until(
+                lambda d: bool(
+                    len(d.find_elements(By.CSS_SELECTOR, "select#comboCurso option"))
+                    > 1
+                )
+            )
+        except TimeoutException:
+            raise Exception(
+                f"Erro: Tempo excedido ao carregar dropdown de Cursos para a unidade {unidade_nome}."
+            )
+
         time.sleep(0.05)
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
         curso_options = soup.find("select", id="comboCurso")
 
         cursos_dict: dict[str, Curso] = {}
+
         if not curso_options:
             raise ValueError("Dropdown para Cursos não foi encontrado")
         for option in curso_options.find_all("option"):
@@ -107,36 +146,53 @@ class Scrapper:
         for curso in cursos_dict.values():
             print(curso.nome)
             self._populate_curso(curso)
+
         return cursos_dict
 
     def _populate_curso(self, curso: Curso) -> None:
-        # Select the course in the dropdown
-        curso_dropdown = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "comboCurso"))
-        )
-        curso_dropdown.send_keys(curso.nome)
+        try:
+            # Select the course in the dropdown
+            curso_dropdown = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.ID, "comboCurso"))
+            )
+            curso_dropdown.send_keys(curso.nome)
+        except TimeoutException:
+            raise Exception("Erro: Tempo excedido ao selecionar o curso.")
 
-        # Click the "Buscar" button
-        buscar_button = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "enviar"))
-        )
-        buscar_button.click()
+        try:
+            # Click the "Buscar" button
+            buscar_button = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.ID, "enviar"))
+            )
+            buscar_button.click()
+        except TimeoutException:
+            raise Exception("Erro: Tempo excedido ao clicar no botão 'Buscar'.")
 
         self._wait_overlay()
 
         # Now click the "Grade Curricular" tab
         try:
-            grade_tab = WebDriverWait(self.driver, 10).until(
+            grade_tab = WebDriverWait(self.driver, 30).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step4-tab"))
             )
             grade_tab.click()
+        except TimeoutException:
+            raise Exception(
+                f"Erro: Tempo excedido ao clicar na aba 'Grade Curricular' para o curso {curso.nome}."
+            )
+            return
         except Exception as _:
             # If "Grade Curricular" tab is unavailable
             print("Hey!")
-            close_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "div.ui-dialog-buttonset"))
-            )
-            close_button.click()
+            try:
+                close_button = WebDriverWait(self.driver, 30).until(
+                    EC.element_to_be_clickable(
+                        (By.CSS_SELECTOR, "div.ui-dialog-buttonset")
+                    )
+                )
+                close_button.click()
+            except TimeoutException:
+                raise Exception("Erro: Tempo excedido ao fechar o diálogo.")
             return
 
         # If the tab is available, but contains no tables
@@ -172,14 +228,21 @@ class Scrapper:
             except IndexError:
                 pass
         except TimeoutException as _:
-            pass
+            raise Exception(
+                f"Erro: Tempo excedido ao buscar a grade curricular do curso {curso.nome}."
+            )
 
         # Click the "Buscar" tab to reset the page
         self._wait_overlay()
-        buscar_button = WebDriverWait(self.driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
-        )
-        buscar_button.click()
+        try:
+            buscar_button = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "a#step1-tab"))
+            )
+            buscar_button.click()
+        except TimeoutException:
+            raise Exception(
+                f"Erro: Tempo excedido ao clicar na aba 'Buscar' para o curso {curso.nome}."
+            )
 
     def _populate_disciplinas(
         self, curso_nome: str, table: Tag
@@ -255,18 +318,19 @@ class Scrapper:
         print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
 
     def _listar_cursos_unidade(self, unidade: Unidade) -> None:
-        print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
         counter = 0
         table = [["Número", "Nome do Curso", "Período"]]
         for curso in unidade.cursos.values():
             counter += 1
             table.append([str(counter), curso.nome, curso.periodo])
 
-        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
-
         while True:
+            print(f"\nCursos disponíveis na unidade {unidade.nome} ({unidade.sigla}):")
+            print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+
             prompt = "Digite o número do curso para listar as informações ou 'sair' para voltar ao menu:"
             print("\n" + prompt)
+
             escolha = input("> ").strip().upper()
             if escolha == "SAIR":
                 return
@@ -284,12 +348,12 @@ class Scrapper:
         for unidade in self.unidades_dict.values():
             table.append([unidade.sigla, unidade.nome])
 
-        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
-
         prompt = "Para buscar cursos de unidade específica, digite a sigla da unidade. Digite 'sair' para voltar ao menu:"
 
         while True:
+            print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
             print("\n" + prompt)
+
             sigla = input("> ").strip().upper()
             if sigla == "SAIR":
                 return
