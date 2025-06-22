@@ -318,7 +318,10 @@ class Scrapper:
 
     def _listar_cursos_unidade(self, unidade: Unidade) -> None:
         counter = 0
-        table = [["Número", "Nome do Curso", "Período"]]
+        table = [
+            ["Número", "Nome do Curso", "Período"],
+            ["0", "Listar Dados de Todos os Cursos", " -- "],
+        ]
         for curso in unidade.cursos.values():
             counter += 1
             table.append([str(counter), curso.nome, curso.periodo])
@@ -337,7 +340,14 @@ class Scrapper:
                 escolha_numero = int(escolha)
                 if 1 <= escolha_numero <= counter:
                     curso = list(unidade.cursos.values())[escolha_numero - 1]
+                    print(f"\n{escolha_numero}:")
                     self._listar_dados_curso(curso)
+                elif escolha_numero == 0:
+                    counter = 1
+                    for curso in unidade.cursos.values():
+                        print(f"\n{counter}:")
+                        self._listar_dados_curso(curso)
+                        counter += 1
                 else:
                     print("Número inválido, tente novamente.")
 
@@ -362,14 +372,83 @@ class Scrapper:
             else:
                 print("Sigla inválida, tente novamente.")
 
+    def _listar_todos_cursos(self) -> None:
+        print("\nDados de todos os cursos disponíveis:")
+        for unidade in self.unidades_dict.values():
+            print(f"\nUnidade: {unidade.nome} ({unidade.sigla})")
+            counter = 1
+            for curso in unidade.cursos.values():
+                print(f"\n{unidade.sigla} - {counter}:")
+                self._listar_dados_curso(curso)
+                counter += 1
+
+        prompt = "Digite 'sair' para voltar ao menu:"
+
+        while True:
+            print("\n" + prompt)
+
+            escolha = input("> ").strip().upper()
+            if escolha == "SAIR":
+                return
+            else:
+                print("Opção inválida, tente novamente.")
+
+    def _listar_disciplina(self) -> None:
+        prompt = "\nDigite o código da disciplina para listar as informações ou 'sair' para voltar ao menu:"
+
+        while True:
+            print(prompt)
+            codigo = input("> ").strip().upper()
+            if codigo == "SAIR":
+                return
+            if codigo in self.disciplinas_dict:
+                disciplina = self.disciplinas_dict[codigo]
+                table = [
+                    ["Nome", "Código", "Créditos Aula", "Créditos Trabalho"],
+                    [
+                        disciplina.nome,
+                        disciplina.codigo,
+                        disciplina.creditos_aula,
+                        disciplina.creditos_trabalho,
+                    ],
+                ]
+                print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+
+                table = [
+                    ["Carga Horária", f"{disciplina.carga_horaria} horas"],
+                    ["Horas de Estágio", f"{disciplina.horas_estagio} horas"],
+                    ["Horas de PCC", f"{disciplina.horas_pcc} horas"],
+                    ["Atividades TPA", f"{disciplina.atividades_tpa} horas"],
+                ]
+                print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+
+                table = [["Curso"]]
+                for curso in disciplina.cursos:
+                    table.append([curso])
+
+                print("\nCursos que oferecem essa disciplina:")
+                print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+            else:
+                print("Código inválido, tente novamente.")
+
+    def _listar_disciplinas_comuns(self) -> None:
+        table = [["Nome da Disciplina", "Código", "Qtd Cursos"]]
+        for disciplina in self.disciplinas_dict.values():
+            qtd_cursos = len(disciplina.cursos)
+            if qtd_cursos > 1:
+                table.append([disciplina.nome, disciplina.codigo, str(qtd_cursos)])
+
+        print("\nDisciplinas comuns a mais de um curso:")
+        print(tabulate(table, headers="firstrow", tablefmt=self.table_style))
+
     def menu(self) -> None:
         prompt = "Busque informações no sistema Jupiter, ou digite 'sair' para fechar o programa:"
 
         table = [
             ["Opção", "Descrição"],
             ["1", "Listar unidades disponíveis"],
-            ["2", "Listar cursos disponíveis"],
-            ["3", "Buscar disciplina específica"],
+            ["2", "Listar dados de todos os cursos disponíveis"],
+            ["3", "Listar dados de uma disciplina específica"],
             ["4", "Buscar disciplinas comuns a mais de um curso"],
         ]
         while True:
@@ -379,9 +458,9 @@ class Scrapper:
                 case "1":
                     self._listar_unidades()
                 case "2":
-                    self._listar_cursos()
+                    self._listar_todos_cursos()
                 case "3":
-                    self._buscar_disciplina()
+                    self._listar_disciplina()
                 case "4":
                     self._listar_disciplinas_comuns()
                 case "SAIR":
