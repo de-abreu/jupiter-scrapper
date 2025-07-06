@@ -72,19 +72,14 @@ poetry install
 Completada a instalação, o programa pode ser executado com:
 
 ```bash
-python src/main.py [arg]
-```
-
-Ou, se estiver usando poetry:
-
-```bash
 poetry run python src/main.py [arg]
 ```
 
 Onde `[arg]` descreve uma quantidade máxima, se houver, de unidades da USP a
 serem pesquisadas.
 
-> [!NOTE] > `poetry` pode ser instalado com `pip`, se necessário:
+> [!NOTE]
+> `poetry` pode ser instalado com `pip`, se necessário:
 >
 > ```bash
 >    pip install -u poetry
