@@ -95,7 +95,7 @@ serem pesquisadas.
 O presente programa foi desenvolvido fazendo uso de uma metodologia de
 desenvolvimento orientada a testes (_Test Driven Development, TDD_). Para mais
 informações sobre a progressão da implementação de funcionalidades ao programa,
-confira o nosso [changelog](./CHANGELOG).
+confira o nosso [changelog](./CHANGELOG.md).
 
 ## Autores
 
